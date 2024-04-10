@@ -11,7 +11,7 @@
 input string HassUrl = "https://hass.pattinson.org/";
 input string HassToken = "";
 input string HassSensorEntity = "alchemist";
-input string HassUpdateInterval = 300;
+input string HassUpdateInterval = 60;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -21,6 +21,7 @@ int OnInit()
 //--- create timer
    EventSetTimer(HassUpdateInterval);
    Print("Timer registered with interval " + HassUpdateInterval + " seconds");
+   UpdateHass();
    
 //---
    return(INIT_SUCCEEDED);
@@ -42,12 +43,27 @@ void OnTick()
 //---
    
   }
+  
+double getClosedPnlOfDay(const int indexDay)
+{
+   const datetime timeStart=iTime(_Symbol,PERIOD_D1,indexDay),
+                  timeEnd = timeStart+PeriodSeconds(PERIOD_D1);
+   double result=0.;
+   for(int i=OrdersHistoryTotal()-1;i>=0;i--)
+   {
+      if(!OrderSelect(i,SELECT_BY_POS,MODE_HISTORY))continue;
+      //filter by OrderSymbol() and OrderMagicNumber() here
+      if(OrderCloseTime()<timeStart || OrderCloseTime()>=timeEnd) continue;
+      result+=OrderProfit() + OrderCommission() + OrderSwap();
+   }
+   return result;
+}
 //+------------------------------------------------------------------+
 //| Timer function                                                   |
 //+------------------------------------------------------------------+
-void OnTimer()
+void UpdateHass()
   {
-string JSON_string = StringFormat( "{\"state\": \"On\", \"attributes\": {\"ping\": %d, \"profit\": %d}}", TerminalInfoInteger(TERMINAL_PING_LAST),AccountProfit());                                
+string JSON_string = StringFormat( "{\"state\": \"On\", \"attributes\": {\"ping\": %d, \"dailyProfit\": %.2f, \"activePnl\": %.2f}}", TerminalInfoInteger(TERMINAL_PING_LAST),getClosedPnlOfDay(0),AccountProfit());                                
 
           string  ReqSERVER_URL = HassUrl + "api/states/sensor." + HassSensorEntity,
                   ReqCOOKIE     =  NULL,
@@ -86,3 +102,8 @@ string JSON_string = StringFormat( "{\"state\": \"On\", \"attributes\": {\"ping\
    
   }
 //+------------------------------------------------------------------+
+
+void OnTimer()
+  {
+  UpdateHass();
+  }
