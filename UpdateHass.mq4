@@ -1,16 +1,16 @@
 //+------------------------------------------------------------------+
 //|                                                   UpdateHass.mq4 |
 //|                                                  James Pattinson |
-//|                                             https://www.mql5.com |
+//|                                                                  |
 //+------------------------------------------------------------------+
 #property copyright "James Pattinson"
-#property link      "https://www.mql5.com"
+#property link      "https://github.com/SupraJames/MT4-HA"
 #property version   "1.00"
 #property strict
 
 input string HassUrl = "https://hass.pattinson.org/";
 input string HassToken = "";
-input string HassSensorEntity = "alchemist";
+input string HassSensorPrefix = "mtdev";
 input string HassUpdateInterval = 60;
 
 //+------------------------------------------------------------------+
@@ -35,36 +35,42 @@ void OnDeinit(const int reason)
    EventKillTimer();
    
   }
-//+------------------------------------------------------------------+
-//| Expert tick function                                             |
-//+------------------------------------------------------------------+
-void OnTick()
-  {
-//---
-   
-  }
   
-double getClosedPnlOfDay(const int indexDay)
+double getClosedPnlOfDay()
 {
-   const datetime timeStart=iTime(_Symbol,PERIOD_D1,indexDay),
-                  timeEnd = timeStart+PeriodSeconds(PERIOD_D1);
+   // Note that this is the timestamp of the LAST TRADE/TICK and NOT the actual Time!
+   const datetime curTime = TimeCurrent();
+   const datetime timeStart = StrToTime(IntegerToString(Year()) + "." + IntegerToString(Month()) + "." + IntegerToString(Day()) + " 00:00");
+                  
    double result=0.;
+   
    for(int i=OrdersHistoryTotal()-1;i>=0;i--)
    {
       if(!OrderSelect(i,SELECT_BY_POS,MODE_HISTORY))continue;
-      //filter by OrderSymbol() and OrderMagicNumber() here
-      if(OrderCloseTime()<timeStart || OrderCloseTime()>=timeEnd) continue;
+      // Filter out any trades without 'Standard' as the comment
+      if(StringCompare(StringSubstr(OrderComment(),0,8),"Standard" )) continue;
+      //Print("symbol of order #", OrderTicket(), " is ", OrderComment());
+      if(OrderCloseTime()<timeStart || OrderCloseTime()>=curTime) continue;
       result+=OrderProfit() + OrderCommission() + OrderSwap();
    }
    return result;
 }
+
 //+------------------------------------------------------------------+
 //| Timer function                                                   |
 //+------------------------------------------------------------------+
 void UpdateHass()
   {
-string JSON_string = StringFormat( "{\"state\": \"On\", \"attributes\": {\"ping\": %d, \"dailyProfit\": %.2f, \"activePnl\": %.2f}}", TerminalInfoInteger(TERMINAL_PING_LAST),getClosedPnlOfDay(0),AccountProfit());                                
 
+  UpdateSensor(HassSensorPrefix + "_ping", StringFormat( "{\"state\": %.1f, \"attributes\": {\"unit_of_measurement\": \"ms\" }}", TerminalInfoInteger(TERMINAL_PING_LAST)/1000));
+  UpdateSensor(HassSensorPrefix + "_openpos", StringFormat( "{\"state\": %.2f, \"attributes\": {\"unit_of_measurement\": \"EUR\" }}", AccountProfit()));
+  UpdateSensor(HassSensorPrefix + "_profit", StringFormat( "{\"state\": %.2f, \"attributes\": {\"unit_of_measurement\": \"EUR\" }}", getClosedPnlOfDay()));
+
+  }
+//+------------------------------------------------------------------+
+
+void UpdateSensor(string HassSensorEntity, string JSON_string)
+  {
           string  ReqSERVER_URL = HassUrl + "api/states/sensor." + HassSensorEntity,
                   ReqCOOKIE     =  NULL,
                   ReqHEADERs    = "Content-Type: application/json\r\nauthorization: Bearer " + HassToken + "\r\n";
@@ -97,11 +103,10 @@ string JSON_string = StringFormat( "{\"state\": \"On\", \"attributes\": {\"ping\
                        else     result_DecodedFromSERVER += CharToStr( result_RECVed_DATA_FromSERVER[i] );
                 }
                 Print( "DATA:: ", result_DecodedFromSERVER );
-                Print( "HDRs:: ", result_RECVed_HDRs_FromSERVER );
+                //Print( "HDRs:: ", result_RECVed_HDRs_FromSERVER );
           }
    
   }
-//+------------------------------------------------------------------+
 
 void OnTimer()
   {
